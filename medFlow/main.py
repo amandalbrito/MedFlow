@@ -13,7 +13,7 @@ app = FastAPI(title="MedFlow Universal")
 # Permite acesso de qualquer origem (Essencial para Web e Local)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://amandalbrito.github.io/MedFlow/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
