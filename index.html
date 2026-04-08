@@ -59,16 +59,23 @@
 </div>
 
 <script>
-    // MUDANÇA CRÍTICA: Removido 'http://localhost:8000'.
-    // Agora usa caminhos relativos ('/exams'), funcionando tanto local quanto na web.
+    // --- CONFIGURAÇÃO INTELIGENTE ---
+    // Se estiver no GitHub, usa o link do Render. Se estiver local, usa relativo.
+    const isGitHub = window.location.hostname.includes("github.io");
     
+    // COLE A URL DO SEU APP NO RENDER AQUI (sem barra no final)
+    // Exemplo: "https://medflow.onrender.com"
+    const RENDER_URL = "https://medflow-ibae.onrender.com"; 
+
+    const API_URL = isGitHub ? RENDER_URL : "";
+
     // --- Listar Exames ---
     async function refreshExams() {
         const listDiv = document.getElementById('examList');
         listDiv.innerHTML = 'Buscando...';
         
         try {
-            const response = await fetch('/exams'); // Caminho relativo
+            const response = await fetch(`${API_URL}/exams`); // Usa a URL correta
             const data = await response.json();
             
             if (data.length === 0) {
@@ -90,6 +97,7 @@
                 listDiv.appendChild(item);
             });
         } catch (error) {
+            console.error(error);
             listDiv.innerHTML = '<p style="color:red">Erro ao conectar com o servidor.</p>';
         }
     }
@@ -107,13 +115,13 @@
         formData.append('exam_type', document.getElementById('examType').value);
 
         try {
-            const response = await fetch('/ingest', { // Caminho relativo
+            const response = await fetch(`${API_URL}/ingest`, { // Usa a URL correta
                 method: 'POST',
                 body: formData
             });
             const result = await response.json();
             statusP.innerText = '✅ Sucesso! Exame na fila.';
-            document.getElementById('examFile').value = ""; // Limpa input
+            document.getElementById('examFile').value = "";
             refreshExams();
         } catch (error) {
             statusP.innerText = '❌ Erro no upload.';
@@ -126,7 +134,7 @@
             const formData = new FormData();
             formData.append('laudo', 'Exame normal.');
             
-            await fetch(`/exams/${id}/laudo`, { // Caminho relativo
+            await fetch(`${API_URL}/exams/${id}/laudo`, { // Usa a URL correta
                 method: 'POST',
                 body: formData
             });
