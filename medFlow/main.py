@@ -1,5 +1,7 @@
 import os
 import shutil
+import time
+import threading
 from datetime import datetime
 from typing import List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -7,10 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-# --- Configuração ---
-app = FastAPI(title="MedFlow Universal")
+app = FastAPI(title="MedFlow Universal com Stress Test")
 
-# Permite acesso de qualquer origem (Essencial para Web e Local)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,18 +19,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Diretório para salvar os exames
 UPLOAD_DIR = "storage"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# --- Banco de Dados em Memória (Funciona local e na nuvem sem config) ---
-fake_db = {
-    "patients": {},
-    "exams": [],
-    "counters": {"patient_id": 1, "exam_id": 1}
-}
+# --- Banco de Dados e Métricas em Memória ---
+fake_db = {"patients": {}, "exams": [], "counters": {"patient_id": 1, "exam_id": 1}}
 
-# --- Modelos de Dados ---
+# Contadores para o Stress Test
+app.state.request_count = 0
+app.state.start_time = time.time()
+
+# Modelos
 class ExamResponse(BaseModel):
     id: int
     patient_name: str
@@ -47,12 +46,14 @@ async def ingest_exam(
     patient_cpf: str = Form(...),
     exam_type: str = Form(...)
 ):
-    # Salva arquivo
+    # Incrementa contador de requisições (para o stress test)
+    app.state.request_count += 1
+    
+    # Simula processamento leve
     file_location = f"{UPLOAD_DIR}/{file.filename}"
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    # Lógica de Banco
     exam_id = fake_db["counters"]["exam_id"]
     new_exam = {
         "id": exam_id,
@@ -64,22 +65,50 @@ async def ingest_exam(
     fake_db["exams"].append(new_exam)
     fake_db["counters"]["exam_id"] += 1
     
-    return {"message": "Exame ingerido com sucesso", "exam_id": exam_id}
+    # Mantém apenas os últimos 50 exames na lista para não estourar a memória do Render
+    if len(fake_db["exams"]) > 50:
+        fake_db["exams"] = fake_db["exams"][-50:]
+        
+    return {"message": "Exame ingerido", "exam_id": exam_id}
 
 @app.get("/exams", response_model=List[ExamResponse])
 def list_exams():
+    app.state.request_count += 1
     return fake_db["exams"]
 
 @app.post("/exams/{exam_id}/laudo")
 def finalize_exam(exam_id: int, laudo: str = Form(...)):
+    app.state.request_count += 1
     for exam in fake_db["exams"]:
         if exam["id"] == exam_id:
             exam["status"] = "concluido"
             return {"message": "Laudo salvo"}
     raise HTTPException(status_code=404, detail="Exame não encontrado")
 
-# --- Rota para servir o Frontend (Funciona na Web e Local) ---
+# --- Rotas de Monitoramento (Para o Stress Test) ---
+
+@app.get("/stats")
+def get_stats():
+    """Retorna métricas para o painel de stress."""
+    elapsed = time.time() - app.state.start_time
+    rpm = 0
+    if elapsed > 0:
+        rpm = (app.state.request_count / elapsed) * 60
+    
+    return {
+        "total_requests": app.state.request_count,
+        "uptime_seconds": round(elapsed, 2),
+        "requests_per_minute": round(rpm, 2),
+        "active_exams_in_memory": len(fake_db["exams"])
+    }
+
+@app.post("/reset-stats")
+def reset_stats():
+    """Reseta os contadores do stress test."""
+    app.state.request_count = 0
+    app.state.start_time = time.time()
+    return {"status": "resetado"}
+
 @app.get("/")
 async def read_root():
-    # Retorna o arquivo HTML quando acessa a raiz do site
     return FileResponse('index.html')
