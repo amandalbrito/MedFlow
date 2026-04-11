@@ -1,35 +1,36 @@
 import os
 import shutil
-import time
-import threading
 from datetime import datetime
 from typing import List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="MedFlow Universal com Stress Test")
+# --- Configuração do App ---
+app = FastAPI(title="MedFlow API - Modo Demo")
 
+# CORREÇÃO DO CORS: Permite qualquer origem (Ideal para desenvolvimento)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], # Permite o front-end (127.0.0.1:5500)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Diretório para salvar os exames
 UPLOAD_DIR = "storage"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# --- Banco de Dados e Métricas em Memória ---
-fake_db = {"patients": {}, "exams": [], "counters": {"patient_id": 1, "exam_id": 1}}
+# --- Simulação de Banco de Dados em Memória ---
+# (Isso resolve o erro 500 de conexão com banco real)
+fake_db = {
+    "patients": {},
+    "exams": [],
+    "counters": {"patient_id": 1, "exam_id": 1}
+}
 
-# Contadores para o Stress Test
-app.state.request_count = 0
-app.state.start_time = time.time()
-
-# Modelos
+# --- Modelos de Dados ---
 class ExamResponse(BaseModel):
     id: int
     patient_name: str
@@ -37,7 +38,7 @@ class ExamResponse(BaseModel):
     status: str
     upload_date: str
 
-# --- Rotas da API ---
+# --- Rotas ---
 
 @app.post("/ingest")
 async def ingest_exam(
@@ -46,13 +47,17 @@ async def ingest_exam(
     patient_cpf: str = Form(...),
     exam_type: str = Form(...)
 ):
-    # Incrementa contador de requisições (para o stress test)
-    app.state.request_count += 1
+    """Recebe o exame e salva metadados na memória."""
     
-    # Simula processamento leve
+    # 1. Salva o arquivo físico
     file_location = f"{UPLOAD_DIR}/{file.filename}"
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    # 2. Lógica simulada de Banco de Dados
+    patient_id = fake_db["counters"]["patient_id"]
+    fake_db["patients"][patient_cpf] = {"id": patient_id, "name": patient_name}
+    fake_db["counters"]["patient_id"] += 1
     
     exam_id = fake_db["counters"]["exam_id"]
     new_exam = {
@@ -65,50 +70,22 @@ async def ingest_exam(
     fake_db["exams"].append(new_exam)
     fake_db["counters"]["exam_id"] += 1
     
-    # Mantém apenas os últimos 50 exames na lista para não estourar a memória do Render
-    if len(fake_db["exams"]) > 50:
-        fake_db["exams"] = fake_db["exams"][-50:]
-        
-    return {"message": "Exame ingerido", "exam_id": exam_id}
+    return {"message": "Exame ingerido com sucesso", "file_size": file.size, "exam_id": exam_id}
+
 
 @app.get("/exams", response_model=List[ExamResponse])
 def list_exams():
-    app.state.request_count += 1
+    """Retorna a lista de exames para o médico."""
+    # Retorna apenas os dados formatados que o front espera
     return fake_db["exams"]
+
 
 @app.post("/exams/{exam_id}/laudo")
 def finalize_exam(exam_id: int, laudo: str = Form(...)):
-    app.state.request_count += 1
+    """Finaliza o exame."""
     for exam in fake_db["exams"]:
         if exam["id"] == exam_id:
             exam["status"] = "concluido"
-            return {"message": "Laudo salvo"}
-    raise HTTPException(status_code=404, detail="Exame não encontrado")
-
-# --- Rotas de Monitoramento (Para o Stress Test) ---
-
-@app.get("/stats")
-def get_stats():
-    """Retorna métricas para o painel de stress."""
-    elapsed = time.time() - app.state.start_time
-    rpm = 0
-    if elapsed > 0:
-        rpm = (app.state.request_count / elapsed) * 60
+            return {"message": "Laudo salvo e exame finalizado"}
     
-    return {
-        "total_requests": app.state.request_count,
-        "uptime_seconds": round(elapsed, 2),
-        "requests_per_minute": round(rpm, 2),
-        "active_exams_in_memory": len(fake_db["exams"])
-    }
-
-@app.post("/reset-stats")
-def reset_stats():
-    """Reseta os contadores do stress test."""
-    app.state.request_count = 0
-    app.state.start_time = time.time()
-    return {"status": "resetado"}
-
-@app.get("/")
-async def read_root():
-    return FileResponse('index.html')
+    raise HTTPException(status_code=404, detail="Exame não encontrado")

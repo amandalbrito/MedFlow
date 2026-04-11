@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedFlow - Sistema Universal</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { border: 1px solid #ddd; padding: 15px; border-radius: 6px; background: #fafafa; }
+        .card h3 { margin-top: 0; color: #333; }
+        .status-pendente { color: #e67e22; font-weight: bold; }
+        .status-concluido { color: #27ae60; font-weight: bold; }
+        button { background-color: #3498db; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #2980b9; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0 15px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🏥 MedFlow Dashboard</h1>
+    
+    <div class="grid">
+        <!-- Coluna 1: Upload -->
+        <div class="card">
+            <h3>📥 Upload de Exame</h3>
+            <form id="uploadForm">
+                <label>Nome do Paciente:</label>
+                <input type="text" id="patientName" value="João da Silva" required>
+                
+                <label>CPF:</label>
+                <input type="text" id="patientCpf" value="12345678900" required>
+                
+                <label>Tipo de Exame:</label>
+                <select id="examType">
+                    <option value="Tomografia">Tomografia</option>
+                    <option value="Ressonância">Ressonância Magnética</option>
+                    <option value="Raio-X">Raio-X</option>
+                </select>
+
+                <label>Arquivo:</label>
+                <input type="file" id="examFile" required>
+                
+                <button type="submit">Enviar Exame</button>
+            </form>
+            <p id="uploadStatus" style="margin-top:10px; font-size: 0.9em;"></p>
+        </div>
+
+        <!-- Coluna 2: Fila Médica -->
+        <div class="card">
+            <h3>🩺 Fila de Trabalho</h3>
+            <div id="examList"><p>Carregando...</p></div>
+            <button onclick="refreshExams()">🔄 Atualizar Lista</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    
+    // --- Listar Exames ---
+    async function refreshExams() {
+        const listDiv = document.getElementById('examList');
+        listDiv.innerHTML = 'Buscando...';
+        
+        try {
+            const response = await fetch('http://localhost:8000/exams');
+            const data = await response.json();
+            
+            if (data.length === 0) {
+                listDiv.innerHTML = '<p>Nenhum exame pendente.</p>';
+                return;
+            }
+
+            listDiv.innerHTML = '';
+            data.forEach(exam => {
+                const item = document.createElement('div');
+                item.style.borderBottom = '1px solid #eee';
+                item.style.padding = '10px 0';
+                item.innerHTML = `
+                    <strong>Paciente:</strong> ${exam.patient_name} <br>
+                    <strong>Tipo:</strong> ${exam.exam_type} <br>
+                    <strong>Status:</strong> <span class="status-${exam.status}">${exam.status}</span><br>
+                    <button onclick="finalizeExam(${exam.id})">✅ Realizar Laudo</button>
+                `;
+                listDiv.appendChild(item);
+            });
+        } catch (error) {
+            listDiv.innerHTML = '<p style="color:red">Erro ao conectar com o servidor.</p>';
+        }
+    }
+
+    // --- Upload ---
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const statusP = document.getElementById('uploadStatus');
+        statusP.innerText = 'Enviando...';
+
+        const formData = new FormData();
+        formData.append('file', document.getElementById('examFile').files[0]);
+        formData.append('patient_name', document.getElementById('patientName').value);
+        formData.append('patient_cpf', document.getElementById('patientCpf').value);
+        formData.append('exam_type', document.getElementById('examType').value);
+
+        try {
+            const response = await fetch('http://localhost:8000/ingest', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            statusP.innerText = '✅ Sucesso! Exame na fila.';
+            document.getElementById('examFile').value = ""; // Limpa input
+            refreshExams();
+        } catch (error) {
+            statusP.innerText = '❌ Erro no upload.';
+        }
+    });
+
+    // --- Finalizar ---
+    async function finalizeExam(id) {
+        if(confirm("Confirma finalizar este exame?")) {
+            const formData = new FormData();
+            formData.append('laudo', 'Exame normal.');
+            
+            await fetch(`http://localhost:8000/exams/${id}/laudo`, {
+                method: 'POST',
+                body: formData
+            });
+            refreshExams();
+        }
+    }
+
+    // Inicializa
+    refreshExams();
+</script>
+
+</body>
+</html>
