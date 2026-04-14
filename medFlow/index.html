@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedFlow Pro - Secure</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; }
+        #loginScreen, #app { display: none; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 50px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        .error { color: red; font-size: 0.9em; }
+        .card { border: 1px solid #ddd; padding: 15px; margin-top: 10px; border-radius: 4px; background: #fafafa; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        #logoutBtn { background: #dc3545; width: auto; float: right; padding: 5px 10px; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <!-- Tela de Login -->
+    <div id="loginScreen" class="container">
+        <h2>🔐 MedFlow Login</h2>
+        <form id="loginForm">
+            <input type="text" id="username" placeholder="Usuário" value="admin" required>
+            <input type="password" id="password" placeholder="Senha" value="admin123" required>
+            <button type="submit">Entrar</button>
+            <p class="error" id="loginError"></p>
+        </form>
+    </div>
+
+    <!-- Aplicação Principal -->
+    <div id="app" class="container">
+        <button id="logoutBtn" onclick="logout()">Sair</button>
+        <h1>🏥 MedFlow Pro <span style="font-size:0.5em; color:green">(Autenticado)</span></h1>
+        
+        <div class="grid">
+            <div>
+                <h3>Upload de Exame</h3>
+                <form id="uploadForm">
+                    <input type="text" id="patientName" placeholder="Nome Paciente" required>
+                    <input type="text" id="cpf" placeholder="CPF" required>
+                    <select id="examType">
+                        <option value="Tomografia">Tomografia</option>
+                        <option value="Ressonância">Ressonância</option>
+                    </select>
+                    <input type="file" id="fileInput" required>
+                    <button type="submit">Enviar</button>
+                </form>
+            </div>
+            <div>
+                <h3>Fila de Exames</h3>
+                <div id="examList"></div>
+            </div>
+        </div>
+
+        <hr style="margin: 20px 0; position: fixed;">
+        <div class="grid">
+            <div class="card">
+                <h3>📊 Estatísticas</h3>
+                <p>Requisições totais: <b id="totalRequests">0</b></p>
+                <p>Sucessos: <b id="totalSuccess">0</b></p>
+                <p>Falhas: <b id="totalFailures">0</b></p>
+            </div>
+        </div>
+        
+        <hr style="margin: 20px 0; position: fixed;">
+        <div class="grid">
+            <div class="card">
+                <h3>⚡ Stress Test</h3>
+                <p>Requisições/min: <b id="rpm">0</b></p>
+                <button onclick="toggleStress()">Iniciar Carga</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let token = localStorage.getItem('token');
+        let stressInterval = null;
+
+        // Verifica se já está logado ao carregar
+        window.onload = () => {
+            if (token) {
+                showApp();
+            } else {
+                showLogin();
+            }
+        };
+
+        // --- Autenticação ---
+        async function login(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('username', document.getElementById('username').value);
+            formData.append('password', document.getElementById('password').value);
+
+            try {
+                const res = await fetch(`${API_URL}/token`, { method: 'POST', body: formData });
+                if (res.ok) {
+                    const data = await res.json();
+                    token = data.access_token;
+                    localStorage.setItem('token', token);
+                    showApp();
+                } else {
+                    document.getElementById('loginError').innerText = "Usuário ou senha inválidos";
+                }
+            } catch (err) {
+                document.getElementById('loginError').innerText = "Erro de conexão";
+            }
+        }
+
+        function logout() {
+            token = null;
+            localStorage.removeItem('token');
+            showLogin();
+            if(stressInterval) clearInterval(stressInterval);
+        }
+
+        function showLogin() { 
+            document.getElementById('loginScreen').style.display = 'block'; 
+            document.getElementById('app').style.display = 'none'; 
+        }
+        
+        function showApp() { 
+            document.getElementById('loginScreen').style.display = 'none'; 
+            document.getElementById('app').style.display = 'block';
+            fetchExams();
+            fetchStats();
+        }
+
+        // --- Lógica da App ---
+        async function apiCall(url, options = {}) {
+            // Adiciona o header de autorização em todas as requisições
+            options.headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${token}`
+            };
+            
+            const res = await fetch(url, options);
+            if (res.status === 401) { // Token expirado ou inválido
+                logout();
+                alert("Sessão expirada. Faça login novamente.");
+                return null;
+            }
+            return res;
+        }
+
+        async function fetchExams() {
+            const res = await apiCall(`${API_URL}/exams`);
+            if(res) {
+                const data = await res.json();
+                const list = document.getElementById('examList');
+                list.innerHTML = data.map(e => 
+                    `<div class="card">
+                        <b>${e.patient_name}</b> (${e.exam_type})<br>
+                        Status: <span style="color:${e.status=='pendente'?'orange':'green'}">${e.status}</span>
+                    </div>`
+                ).join('');
+            }
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('file', document.getElementById('fileInput').files[0]);
+            formData.append('patient_name', document.getElementById('patientName').value);
+            formData.append('patient_cpf', document.getElementById('cpf').value);
+            formData.append('exam_type', document.getElementById('examType').value);
+
+            const res = await apiCall(`${API_URL}/ingest`, { method: 'POST', body: formData });
+            if(res && res.ok) {
+                alert("Enviado com sucesso!");
+                fetchExams();
+            } else {
+                alert("Erro ao enviar. Verifique permissões.");
+            }
+        });
+
+        // --- Stress Test Inteligente ---
+        async function fetchStats() {
+            const res = await fetch(`${API_URL}/stats`); // Publico
+            if(res) {
+                const data = await res.json();
+                document.getElementById('rpm').innerText = data.requests_per_minute;
+            }
+        }
+
+        function toggleStress() {
+            if(stressInterval) {
+                clearInterval(stressInterval);
+                stressInterval = null;
+            } else {
+                stressInterval = setInterval(async () => {
+                    // Gera arquivo falso
+                    const blob = new Blob([new ArrayBuffer(10000)], { type: 'application/octet-stream' });
+                    const formData = new FormData();
+                    formData.append('file', blob, 'stress.dcm');
+                    formData.append('patient_name', 'Auto_Patient');
+                    formData.append('patient_cpf', '00000000000');
+                    formData.append('exam_type', 'StressTest');
+                    
+                    await apiCall(`${API_URL}/ingest`, { method: 'POST', body: formData });
+                }, 200);
+            }
+        }
+
+        function endStressTest() {
+            clearInterval(stressInterval);
+            stressInterval = null;
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', login);
+    </script>
+</body>
+</html>

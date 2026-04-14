@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.0.1
+aiofiles
+python-dotenv
+pydantic-settings
+
+# Testes
+pytest
+pytest-asyncio
+httpx
+requests
