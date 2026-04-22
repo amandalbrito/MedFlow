@@ -54,18 +54,8 @@
                 <div id="examList"></div>
             </div>
         </div>
-
-        <hr style="margin: 20px 0; position: fixed;">
-        <div class="grid">
-            <div class="card">
-                <h3>📊 Estatísticas</h3>
-                <p>Requisições totais: <b id="totalRequests">0</b></p>
-                <p>Sucessos: <b id="totalSuccess">0</b></p>
-                <p>Falhas: <b id="totalFailures">0</b></p>
-            </div>
-        </div>
         
-        <hr style="margin: 20px 0; position: fixed;">
+        <hr style="margin: 20px 0;">
         <div class="grid">
             <div class="card">
                 <h3>⚡ Stress Test</h3>
@@ -204,11 +194,6 @@
                     await apiCall(`${API_URL}/ingest`, { method: 'POST', body: formData });
                 }, 200);
             }
-        }
-
-        function endStressTest() {
-            clearInterval(stressInterval);
-            stressInterval = null;
         }
 
         document.getElementById('loginForm').addEventListener('submit', login);

@@ -24,7 +24,6 @@ engine = create_engine(
 @pytest.fixture(name="session")
 def session_fixture():
     """Cria o banco de dados em memória para cada teste."""
-    # CORREÇÃO: Dropar tabelas para garantir que está limpo
     SQLModel.metadata.drop_all(engine) 
     SQLModel.metadata.create_all(engine)
     
